@@ -1,0 +1,310 @@
+//@version=6
+indicator("Advanced Session Volume Analyzer", overlay=true, max_bars_back=5000)
+
+// ==================== İNPUT KONTROLLERI ====================
+group_sessions = "Seans Ayarları"
+show_asian = input.bool(true, "Asya Seansı (Tokyo)", group=group_sessions)
+show_european = input.bool(true, "Avrupa Seansı (Londra)", group=group_sessions)
+show_american = input.bool(true, "Amerika Seansı (New York)", group=group_sessions)
+
+group_colors = "Renkler"
+color_asian = input.color(color.new(color.blue, 80), "Asya Rengi", group=group_colors)
+color_european = input.color(color.new(color.orange, 80), "Avrupa Rengi", group=group_colors)
+color_american = input.color(color.new(color.red, 80), "Amerika Rengi", group=group_colors)
+
+group_hvn = "HVN/LVN Seviyeleri"
+show_hvn = input.bool(true, "HVN (Yüksek Hacim Node) Göster", group=group_hvn)
+show_lvn = input.bool(true, "LVN (Düşük Hacim Node) Göster", group=group_hvn)
+hvn_threshold = input.float(1.5, "HVN Eşik (Ortalama Çarpı)", minval=0.1, maxval=5, group=group_hvn)
+lvn_threshold = input.float(0.5, "LVN Eşik (Ortalama Çarpı)", minval=0.1, maxval=0.9, group=group_hvn)
+
+group_display = "Gösterim"
+show_poc = input.bool(true, "POC (Point of Control) Göster", group=group_display)
+show_session_balance = input.bool(true, "Seans Dengesi Göster", group=group_display)
+show_labels = input.bool(true, "Seans Bilgileri Göster", group=group_display)
+show_alert_lines = input.bool(true, "Alert Seviyeleri Göster", group=group_display)
+
+group_alerts = "Alert Sistemi"
+enable_alerts = input.bool(true, "Alert'leri Aktif Et", group=group_alerts)
+hvn_breakout_alert = input.bool(true, "HVN Kırılışı Alert", group=group_alerts)
+session_balance_alert = input.bool(true, "Seans Dengesi Alert", group=group_alerts)
+
+// ==================== SEANS SAATLERİ (UTC) ====================
+is_asian_session = (hour >= 22 or hour < 8)
+is_european_session = (hour >= 8 and hour < 17)
+is_american_session = (hour >= 13 and hour < 22)
+
+is_new_asian_candle = (hour == 22 and hour[1] != 22) or (hour == 0 and hour[1] != 0)
+is_new_european_candle = (hour == 8 and hour[1] != 8)
+is_new_american_candle = (hour == 13 and hour[1] != 13)
+
+// ==================== SEANS BACKGROUND ====================
+if show_asian and is_asian_session
+    barcolor(color.new(color_asian, 85))
+else if show_european and is_european_session
+    barcolor(color.new(color_european, 85))
+else if show_american and is_american_session
+    barcolor(color.new(color_american, 85))
+
+// ==================== SEANS HACİM VERİLERİ ====================
+var asian_session_vol = 0.0
+var european_session_vol = 0.0
+var american_session_vol = 0.0
+
+var asian_high = 0.0
+var asian_low = 999999.0
+var asian_open = 0.0
+var asian_close = 0.0
+
+var european_high = 0.0
+var european_low = 999999.0
+var european_open = 0.0
+var european_close = 0.0
+
+var american_high = 0.0
+var american_low = 999999.0
+var american_open = 0.0
+var american_close = 0.0
+
+// Asya Seansı
+if is_asian_session
+    if is_new_asian_candle
+        asian_session_vol := volume
+        asian_high := high
+        asian_low := low
+        asian_open := open
+    else
+        asian_session_vol += volume
+        asian_high := math.max(asian_high, high)
+        asian_low := math.min(asian_low, low)
+    asian_close := close
+else
+    asian_session_vol := 0.0
+    asian_high := 0.0
+    asian_low := 999999.0
+
+// Avrupa Seansı
+if is_european_session
+    if is_new_european_candle
+        european_session_vol := volume
+        european_high := high
+        european_low := low
+        european_open := open
+    else
+        european_session_vol += volume
+        european_high := math.max(european_high, high)
+        european_low := math.min(european_low, low)
+    european_close := close
+else
+    european_session_vol := 0.0
+    european_high := 0.0
+    european_low := 999999.0
+
+// Amerika Seansı
+if is_american_session
+    if is_new_american_candle
+        american_session_vol := volume
+        american_high := high
+        american_low := low
+        american_open := open
+    else
+        american_session_vol += volume
+        american_high := math.max(american_high, high)
+        american_low := math.min(american_low, low)
+    american_close := close
+else
+    american_session_vol := 0.0
+    american_high := 0.0
+    american_low := 999999.0
+
+// ==================== POC HESAPLAMA ====================
+var asian_poc = 0.0
+var european_poc = 0.0
+var american_poc = 0.0
+
+var asian_max_vol_at_price = 0.0
+var european_max_vol_at_price = 0.0
+var american_max_vol_at_price = 0.0
+
+if is_asian_session
+    if volume > asian_max_vol_at_price
+        asian_max_vol_at_price := volume
+        asian_poc := close
+
+if is_european_session
+    if volume > european_max_vol_at_price
+        european_max_vol_at_price := volume
+        european_poc := close
+
+if is_american_session
+    if volume > american_max_vol_at_price
+        american_max_vol_at_price := volume
+        american_poc := close
+
+// ==================== HVN/LVN HESAPLAMA ====================
+avg_vol = ta.sma(volume, 20)
+
+is_hvn_asian = show_hvn and is_asian_session and volume > (avg_vol * hvn_threshold)
+is_hvn_european = show_hvn and is_european_session and volume > (avg_vol * hvn_threshold)
+is_hvn_american = show_hvn and is_american_session and volume > (avg_vol * hvn_threshold)
+
+is_lvn_asian = show_lvn and is_asian_session and volume < (avg_vol * lvn_threshold)
+is_lvn_european = show_lvn and is_european_session and volume < (avg_vol * lvn_threshold)
+is_lvn_american = show_lvn and is_american_session and volume < (avg_vol * lvn_threshold)
+
+// ==================== SESSION BALANCE (CLOSE vs OPEN) ====================
+asian_balance = asian_close > asian_open ? "BULLISH ↑" : "BEARISH ↓"
+european_balance = european_close > european_open ? "BULLISH ↑" : "BEARISH ↓"
+american_balance = american_close > american_open ? "BULLISH ↑" : "BEARISH ↓"
+
+asian_range = asian_high - asian_low
+european_range = european_high - european_low
+american_range = american_high - american_low
+
+// ==================== HVN/LVN VİZÜELİZASYON ====================
+plotshape(is_hvn_asian, title="HVN Asya", style=shape.triangleup, location=location.belowbar, 
+          color=color.new(color_asian, 0), size=size.small)
+plotshape(is_hvn_european, title="HVN Avrupa", style=shape.triangleup, location=location.belowbar, 
+          color=color.new(color_european, 0), size=size.small)
+plotshape(is_hvn_american, title="HVN Amerika", style=shape.triangleup, location=location.belowbar, 
+          color=color.new(color_american, 0), size=size.small)
+
+plotshape(is_lvn_asian, title="LVN Asya", style=shape.triangledown, location=location.abovebar, 
+          color=color.new(color_asian, 50), size=size.small)
+plotshape(is_lvn_european, title="LVN Avrupa", style=shape.triangledown, location=location.abovebar, 
+          color=color.new(color_european, 50), size=size.small)
+plotshape(is_lvn_american, title="LVN Amerika", style=shape.triangledown, location=location.abovebar, 
+          color=color.new(color_american, 50), size=size.small)
+
+// ==================== POC SEVİYESİ ÇIZGILERI ====================
+if show_poc and is_asian_session and asian_poc > 0
+    line.new(bar_index - 5, asian_poc, bar_index, asian_poc, 
+             color=color_asian, width=2, style=line.style_dashed)
+
+if show_poc and is_european_session and european_poc > 0
+    line.new(bar_index - 5, european_poc, bar_index, european_poc, 
+             color=color_european, width=2, style=line.style_dashed)
+
+if show_poc and is_american_session and american_poc > 0
+    line.new(bar_index - 5, american_poc, bar_index, american_poc, 
+             color=color_american, width=2, style=line.style_dashed)
+
+// ==================== ALERT SEVİYELERİ ====================
+if show_alert_lines
+    if is_asian_session
+        hline(asian_high, "Asian High", color.new(color_asian, 50), linestyle=hline.style_dotted)
+        hline(asian_low, "Asian Low", color.new(color_asian, 50), linestyle=hline.style_dotted)
+    
+    if is_european_session
+        hline(european_high, "European High", color.new(color_european, 50), linestyle=hline.style_dotted)
+        hline(european_low, "European Low", color.new(color_european, 50), linestyle=hline.style_dotted)
+    
+    if is_american_session
+        hline(american_high, "American High", color.new(color_american, 50), linestyle=hline.style_dotted)
+        hline(american_low, "American Low", color.new(color_american, 50), linestyle=hline.style_dotted)
+
+// ==================== ALERTLER ====================
+if enable_alerts and hvn_breakout_alert and is_hvn_asian
+    alert("🔵 HVN KIRIŞ - ASYA SEANSINDA YÜKSEK HACIM! Vol: " + str.tostring(volume, "0"), alert.freq_once_per_bar)
+
+if enable_alerts and hvn_breakout_alert and is_hvn_european
+    alert("🟠 HVN KIRIŞ - AVRUPA SEANSINDA YÜKSEK HACIM! Vol: " + str.tostring(volume, "0"), alert.freq_once_per_bar)
+
+if enable_alerts and hvn_breakout_alert and is_hvn_american
+    alert("🔴 HVN KIRIŞ - AMERIKA SEANSINDA YÜKSEK HACIM! Vol: " + str.tostring(volume, "0"), alert.freq_once_per_bar)
+
+if enable_alerts and session_balance_alert and is_new_asian_candle and asian_session_vol > 0
+    alert("🔵 ASYA SEANSIDA KAPANIŞI: " + asian_balance, alert.freq_once_per_bar)
+
+if enable_alerts and session_balance_alert and is_new_european_candle and european_session_vol > 0
+    alert("🟠 AVRUPA SEANSIDA KAPANIŞI: " + european_balance, alert.freq_once_per_bar)
+
+if enable_alerts and session_balance_alert and is_new_american_candle and american_session_vol > 0
+    alert("🔴 AMERIKA SEANSIDA KAPANIŞI: " + american_balance, alert.freq_once_per_bar)
+
+// ==================== ANALİZ TABLOSU ====================
+if show_labels and barstate.islast
+    table_position = table.new(position.top_right, 4, 4, 
+                              border_color=color.gray, 
+                              border_width=2,
+                              frame_color=color.gray,
+                              frame_width=2,
+                              bgcolor=color.new(color.black, 50))
+    
+    // Başlık
+    table.cell(table_position, 0, 0, "SEANS", 
+              text_color=color.white, 
+              bgcolor=color.new(color.gray, 50),
+              text_size=size.small, 
+              text_halign=text.align_center)
+    table.cell(table_position, 1, 0, "HACİM", 
+              text_color=color.white, 
+              bgcolor=color.new(color.gray, 50),
+              text_size=size.small,
+              text_halign=text.align_center)
+    table.cell(table_position, 2, 0, "RANGE", 
+              text_color=color.white, 
+              bgcolor=color.new(color.gray, 50),
+              text_size=size.small,
+              text_halign=text.align_center)
+    table.cell(table_position, 3, 0, "DENGESİ", 
+              text_color=color.white, 
+              bgcolor=color.new(color.gray, 50),
+              text_size=size.small,
+              text_halign=text.align_center)
+    
+    // ASYA
+    if show_asian
+        table.cell(table_position, 0, 1, "🔵 ASYA", 
+                  text_color=color_asian, 
+                  text_size=size.small)
+        table.cell(table_position, 1, 1, str.tostring(math.round(asian_session_vol)), 
+                  text_color=color_asian, 
+                  text_size=size.small,
+                  text_halign=text.align_right)
+        table.cell(table_position, 2, 1, str.tostring(asian_range, "0.00"), 
+                  text_color=color_asian, 
+                  text_size=size.small,
+                  text_halign=text.align_right)
+        table.cell(table_position, 3, 1, asian_balance, 
+                  text_color=asian_close > asian_open ? color.green : color.red, 
+                  text_size=size.small)
+    
+    // AVRUPA
+    if show_european
+        table.cell(table_position, 0, 2, "🟠 AVRUPA", 
+                  text_color=color_european, 
+                  text_size=size.small)
+        table.cell(table_position, 1, 2, str.tostring(math.round(european_session_vol)), 
+                  text_color=color_european, 
+                  text_size=size.small,
+                  text_halign=text.align_right)
+        table.cell(table_position, 2, 2, str.tostring(european_range, "0.00"), 
+                  text_color=color_european, 
+                  text_size=size.small,
+                  text_halign=text.align_right)
+        table.cell(table_position, 3, 2, european_balance, 
+                  text_color=european_close > european_open ? color.green : color.red, 
+                  text_size=size.small)
+    
+    // AMERIKA
+    if show_american
+        table.cell(table_position, 0, 3, "🔴 AMERIKA", 
+                  text_color=color_american, 
+                  text_size=size.small)
+        table.cell(table_position, 1, 3, str.tostring(math.round(american_session_vol)), 
+                  text_color=color_american, 
+                  text_size=size.small,
+                  text_halign=text.align_right)
+        table.cell(table_position, 2, 3, str.tostring(american_range, "0.00"), 
+                  text_color=color_american, 
+                  text_size=size.small,
+                  text_halign=text.align_right)
+        table.cell(table_position, 3, 3, american_balance, 
+                  text_color=american_close > american_open ? color.green : color.red, 
+                  text_size=size.small)
+
+// ==================== POC PLOTLARI ====================
+plot(show_poc and is_asian_session ? asian_poc : na, "Asya POC", color_asian, linewidth=3)
+plot(show_poc and is_european_session ? european_poc : na, "Avrupa POC", color_european, linewidth=3)
+plot(show_poc and is_american_session ? american_poc : na, "Amerika POC", color_american, linewidth=3)
